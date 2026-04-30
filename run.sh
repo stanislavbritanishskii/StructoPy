@@ -10,6 +10,7 @@ input_file=$1
 if [ -z "$input_file" ]; then
 	echo "Usage: ./run.sh filename.h"
 	echo "Example: ./run.sh sample.h"
+	echo "Resulting file will be saved in output.py"
 	exit 1
 fi
 
@@ -45,6 +46,7 @@ echo "Preprocessed output written to temp.hpp."
 
 
 python3 main.py temp.hpp > output.py
+echo "###### saved resulting python file into output.py"
 
 
 cl=$(cat output.py | grep class | tr ':' ' ' |awk '{print $2}')
@@ -65,6 +67,5 @@ print(test_object.__dict__)
 EOF
 ) >> test.py
 done
-
 
 python3 test.py
