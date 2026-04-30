@@ -6,6 +6,18 @@
 # Input file
 input_file=$1
 
+# Check if input file is provided
+if [ -z "$input_file" ]; then
+	echo "Usage: ./run.sh filename.h"
+	echo "Example: ./run.sh sample.h"
+	exit 1
+fi
+
+if [ ! -f "$input_file" ]; then
+	echo "Error: file '$input_file' not found"
+	exit 1
+fi
+
 # Temporary include directory
 tmp_includes="tmp_includes"
 
