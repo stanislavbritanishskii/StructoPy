@@ -16,8 +16,10 @@ This will:
 
 1. Preprocess the input header (resolving user `""`-form `#include`s, stubbing system `<>`-form ones)
 2. Parse every struct definition
-3. Write Python classes to `output.py`
-4. Auto-generate `test.py` that instantiates each class and prints its size and format string
+3. Write Python classes to `/tmp/structopy/output.py`
+4. Auto-generate `/tmp/structopy/test.py`, which instantiates each class and prints its size and format string
+
+All generated artifacts (`output.py`, `temp.hpp`, `test.py`) live under `/tmp/structopy/` so the repo working tree stays clean. Re-running overwrites them in place.
 
 To pass additional include search paths to the preprocessor:
 
@@ -58,6 +60,8 @@ Every generated class exposes:
 Example:
 
 ```python
+# Either copy /tmp/structopy/output.py into your project, or:
+import sys; sys.path.insert(0, "/tmp/structopy")
 from output import Sensor
 
 s = Sensor()

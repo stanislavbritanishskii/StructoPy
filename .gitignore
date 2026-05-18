@@ -1,2 +1,8 @@
 *__pycache__
 *.idea
+
+# run.sh artifacts (now written to /tmp/structopy/, but ignore here too in case
+# someone runs an older copy).
+output.py
+temp.hpp
+test.py

@@ -74,6 +74,16 @@ input_dir=$(dirname "$input_file")
 stub_dir=$(mktemp -d)
 trap 'rm -rf "$stub_dir"' EXIT
 
+# Artifacts go to /tmp/structopy/ so the repo working tree stays clean.
+# Fixed path (not mktemp) so the location is predictable across runs.
+# Override with STRUCTOPY_ARTIFACT_DIR if you need a different location
+# (the test harness uses this to keep parallel runs isolated).
+artifact_dir="${STRUCTOPY_ARTIFACT_DIR:-/tmp/structopy}"
+mkdir -p "$artifact_dir"
+
+# Resolve main.py relative to this script so run.sh works from any cwd.
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # 1. Discover the full transitive include tree.
 #    -nostdinc removes default system paths, -MG makes missing headers non-fatal.
 deps_raw=$(gcc -M -MG -nostdinc -I"$input_dir" "${extra_includes[@]}" "$input_file" 2>/dev/null)
@@ -128,20 +138,20 @@ if [ ${#stubbed[@]} -gt 0 ]; then
 fi
 
 # 4. Real preprocess: user includes resolve normally, system ones expand to nothing.
-gcc -E -P -nostdinc -I"$input_dir" "${extra_includes[@]}" -I"$stub_dir" "$input_file" -o temp.hpp
+gcc -E -P -nostdinc -I"$input_dir" "${extra_includes[@]}" -I"$stub_dir" "$input_file" -o "$artifact_dir/temp.hpp"
 
-echo "Preprocessed output written to temp.hpp."
+echo "Preprocessed output written to $artifact_dir/temp.hpp"
 
-python3 main.py ${endian:+--endian "$endian"} temp.hpp > output.py
-echo "###### saved resulting python file into output.py"
+python3 "$script_dir/main.py" ${endian:+--endian "$endian"} "$artifact_dir/temp.hpp" > "$artifact_dir/output.py"
+echo "###### saved resulting python file into $artifact_dir/output.py"
 
 # Smoke-test scaffold: instantiate every generated class.
-cl=$(grep '^class ' output.py | tr ':' ' ' | awk '{print $2}')
+cl=$(grep '^class ' "$artifact_dir/output.py" | tr ':' ' ' | awk '{print $2}')
 echo "$cl"
-echo "from output import *" > test.py
+echo "from output import *" > "$artifact_dir/test.py"
 for name in $cl; do
 	echo "found built class for $name"
-	cat >> test.py <<EOF
+	cat >> "$artifact_dir/test.py" <<EOF
 test_object = $name()
 print("$name")
 print(test_object.get_format_string())
@@ -149,4 +159,4 @@ print(test_object.get_size())
 print(test_object.__dict__)
 EOF
 done
-python3 test.py
+(cd "$artifact_dir" && python3 test.py)

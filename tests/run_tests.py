@@ -411,6 +411,29 @@ def test_string_literal_keyword():
     report("module exposes no GhostString attr", not hasattr(m, "GhostString"))
 
 
+def test_forward_decl():
+    """Forward declaration (`struct Foo;`) must be skipped, not consume the next body."""
+    print("\n=== test_forward_decl ===")
+    rc, out, err = generate(os.path.join(HERE, "test_forward_decl.h"))
+    report("generator exits 0", rc == 0, err.strip())
+    if rc != 0:
+        return
+    # The real struct must be `Later`, not `Early`.
+    report("Later class generated", "class Later" in out)
+    report("no phantom Early class (forward decl skipped)",
+           "class Early" not in out,
+           "forward declaration was treated as a definition")
+    m = load_generated(out, "gen_forward_decl")
+    report("module has Later", hasattr(m, "Later"))
+    report("module has no Early", not hasattr(m, "Early"))
+
+    l = m.Later(); l.value = 1234; l.tag = 5678
+    b = l.to_struct()
+    l2 = m.Later(); l2.from_struct(b)
+    report("Later.value roundtrip", l2.value == 1234)
+    report("Later.tag roundtrip", l2.tag == 5678)
+
+
 def test_attributes():
     print("\n=== test_attributes ===")
     rc, out, err = generate(os.path.join(HERE, "test_attributes.h"))
@@ -483,10 +506,12 @@ def test_includes():
         shutil.copy(os.path.join(ROOT, "run.sh"), workdir)
 
         try:
+            env = os.environ.copy()
+            env["STRUCTOPY_ARTIFACT_DIR"] = workdir
             r = subprocess.run(
                 ["bash", "run.sh", "test_includes/main.h"],
                 cwd=workdir, capture_output=True, text=True,
-                timeout=SUBPROCESS_TIMEOUT,
+                timeout=SUBPROCESS_TIMEOUT, env=env,
             )
         except subprocess.TimeoutExpired:
             report("run.sh completes", False, f"TIMEOUT after {SUBPROCESS_TIMEOUT}s")
@@ -560,6 +585,7 @@ def main():
     test_typedef_alias()
     test_nested_array()
     test_string_literal_keyword()
+    test_forward_decl()
     test_includes()
     test_bad("pointer",      "bad_pointer.h",      "pointer")
     test_bad("bitfield",     "bad_bitfield.h",     "bit field")

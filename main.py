@@ -470,14 +470,21 @@ def find_struct(contents):
 
 		new_class.name = contents[name_start:name_end]
 
-		# advance to opening '{'
-		body_start = name_end
-		while body_start < n and not open_close(contents[body_start], '{}'):
-			body_start += 1
-		if body_start >= n:
+		# Advance to opening '{', but bail out on ';' first — that's a forward
+		# declaration like `struct Foo;` (or `typedef struct Foo Bar;`). Without
+		# this check we'd skip past the ';' and consume the body of whatever
+		# struct came next, misattributing fields and dropping the real one.
+		scan = name_end
+		while scan < n and contents[scan] not in '{;':
+			scan += 1
+		if scan >= n:
 			raise ValueError(
 				f"Struct {new_class.name or '<anonymous>'!r} has no body (missing '{{')"
 			)
+		if contents[scan] == ';':
+			pos = scan + 1
+			continue
+		body_start = scan
 
 		body_end = body_start + count_curve_brackets(contents, body_start)
 		body = contents[body_start + 1:body_end - 1]
