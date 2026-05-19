@@ -411,6 +411,49 @@ def test_string_literal_keyword():
     report("module exposes no GhostString attr", not hasattr(m, "GhostString"))
 
 
+def test_default_ctor():
+    """C++ constructors, destructors, member functions and access specifiers
+    must be silently skipped — only data fields should be picked up."""
+    print("\n=== test_default_ctor ===")
+    rc, out, err = generate(os.path.join(HERE, "test_default_ctor.h"))
+    report("generator exits 0", rc == 0, err.strip())
+    if rc != 0:
+        return
+    m = load_generated(out, "gen_default_ctor")
+
+    # WithCtor: constructors + destructor stripped, two int fields remain.
+    w = m.WithCtor(); w.a = 11; w.b = 22
+    b = w.to_struct()
+    w2 = m.WithCtor(); w2.from_struct(b)
+    report("WithCtor.a", w2.a == 11)
+    report("WithCtor.b", w2.b == 22)
+    report("WithCtor size 8", w.get_size() == 8, f"got {w.get_size()}")
+
+    # WithMethods: methods (with multi-line bodies containing assignments)
+    # must be stripped, not parsed as fields.
+    wm = m.WithMethods(); wm.x = 5; wm.y = 7
+    b = wm.to_struct()
+    wm2 = m.WithMethods(); wm2.from_struct(b)
+    report("WithMethods.x", wm2.x == 5)
+    report("WithMethods.y", wm2.y == 7)
+    report("WithMethods has only x and y", set(("x", "y")).issubset(wm.__dict__.keys()))
+    report("WithMethods has no 'sum' field", "sum" not in wm.__dict__)
+    report("WithMethods has no 'result' field", "result" not in wm.__dict__)
+
+    # WithDefaultDelete: `= default` and `= delete` lines skipped, one field.
+    wd = m.WithDefaultDelete(); wd.value = 42
+    b = wd.to_struct()
+    wd2 = m.WithDefaultDelete(); wd2.from_struct(b)
+    report("WithDefaultDelete.value", wd2.value == 42)
+
+    # Access specifiers stripped, both fields kept.
+    wa = m.WithAccessSpec(); wa.pub_val = 1; wa.priv_val = 2
+    b = wa.to_struct()
+    wa2 = m.WithAccessSpec(); wa2.from_struct(b)
+    report("WithAccessSpec.pub_val", wa2.pub_val == 1)
+    report("WithAccessSpec.priv_val", wa2.priv_val == 2)
+
+
 def test_forward_decl():
     """Forward declaration (`struct Foo;`) must be skipped, not consume the next body."""
     print("\n=== test_forward_decl ===")
@@ -587,6 +630,7 @@ def main():
     test_nested_array()
     test_string_literal_keyword()
     test_forward_decl()
+    test_default_ctor()
     test_includes()
     test_bad("pointer",      "bad_pointer.h",      "pointer")
     test_bad("bitfield",     "bad_bitfield.h",     "bit field")

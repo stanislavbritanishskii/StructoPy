@@ -371,8 +371,37 @@ def find_struct_start(contents, pos):
 		return len(contents)
 
 
+def _strip_braced_blocks(text):
+	"""Remove every balanced `{...}` block from a struct body.
+
+	Inside a struct, `{...}` blocks are always method/constructor bodies (or
+	brace-init expressions like `int x = {1,2,3}`) — never nested struct
+	definitions (those are handled by the outer find_struct loop). Stripping
+	them lets find_fields treat what remains as a list of `;`-separated field
+	declarations without choking on statements inside method bodies.
+	"""
+	out = []
+	i = 0
+	n = len(text)
+	while i < n:
+		if text[i] == '{':
+			depth = 1
+			i += 1
+			while i < n and depth > 0:
+				if text[i] == '{':
+					depth += 1
+				elif text[i] == '}':
+					depth -= 1
+				i += 1
+		else:
+			out.append(text[i])
+			i += 1
+	return ''.join(out)
+
+
 def find_fields(contents, structs, struct_name="<unknown>"):
 	res = OrderedDict()
+	contents = _strip_braced_blocks(contents)
 	lines = re.split('[\n;]', contents)
 	known_struct_names = [x.name for x in structs] + [x.name2 for x in structs if x.name2]
 
@@ -382,6 +411,15 @@ def find_fields(contents, structs, struct_name="<unknown>"):
 		if comment != -1:
 			line = line[0:comment].strip()
 		if not line:
+			continue
+
+		# Skip C++ member declarations that aren't data fields: constructors,
+		# destructors, member functions, operators. They all carry '(' for a
+		# parameter list, which a real field declaration never does.
+		if '(' in line:
+			continue
+		# Skip access specifiers (`public:`, `private:`, `protected:`).
+		if line.rstrip(':').strip() in ('public', 'private', 'protected'):
 			continue
 
 		if ':' in line:
