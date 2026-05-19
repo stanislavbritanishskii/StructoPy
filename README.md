@@ -6,10 +6,19 @@ It is designed for simple, deterministic serialization between C++ and Python â€
 
 ---
 
+## Install (optional)
+
+```bash
+./install.sh
+```
+
+Adds a `structopy` alias to `~/.bashrc` pointing at `run.sh` in this checkout. Then `source ~/.bashrc` (or open a new shell) and use `structopy your.h` from anywhere. Re-running `install.sh` is safe (updates the path); `./install.sh --uninstall` removes the alias.
+
 ## Quick start
 
 ```bash
-./run.sh sample.h
+./run.sh sample.h        # in-tree
+structopy sample.h       # after install.sh
 ```
 
 This will:
