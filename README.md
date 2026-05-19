@@ -16,10 +16,17 @@ This will:
 
 1. Preprocess the input header (resolving user `""`-form `#include`s, stubbing system `<>`-form ones)
 2. Parse every struct definition
-3. Write Python classes to `/tmp/structopy/output.py`
-4. Auto-generate `/tmp/structopy/test.py`, which instantiates each class and prints its size and format string
+3. Write Python classes to `sample.py` in the current directory — this is the deliverable
+4. Auto-generate a smoke-test scaffold that instantiates each class and prints its size and format string
 
-All generated artifacts (`output.py`, `temp.hpp`, `test.py`) live under `/tmp/structopy/` so the repo working tree stays clean. Re-running overwrites them in place.
+The output filename mirrors the input basename with `.py` substituted for the extension (`foo/bar.h` → `bar.py` in cwd). Override with `-o`:
+
+```bash
+./run.sh -o classes.py sample.h          # explicit filename
+./run.sh -o gen/types.py sample.h        # path/filename
+```
+
+Throwaway scratch files (`temp.hpp`, the smoke-test scaffold) live under `/tmp/structopy/` and get overwritten on every run. Override that location with `STRUCTOPY_ARTIFACT_DIR=...`.
 
 To pass additional include search paths to the preprocessor:
 
@@ -60,8 +67,6 @@ Every generated class exposes:
 Example:
 
 ```python
-# Either copy /tmp/structopy/output.py into your project, or:
-import sys; sys.path.insert(0, "/tmp/structopy")
 from output import Sensor
 
 s = Sensor()

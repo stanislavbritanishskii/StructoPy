@@ -495,21 +495,21 @@ def test_includes():
     print("\n=== test_includes (run.sh end-to-end) ===")
     import shutil, tempfile
 
-    # Run in an isolated cwd so run.sh's output.py/temp.hpp/test.py don't clobber
-    # anything in the repo root.
+    # Run in an isolated cwd so the generated module lands in workdir, not the
+    # repo root. Invoke run.sh straight from the repo — copying it into workdir
+    # would put `main.py` (the generator) next to a `main.h` (the input), and
+    # the default output filename derivation (`main.h` -> `main.py`) would
+    # collide with the generator script.
     workdir = tempfile.mkdtemp()
     try:
-        # Stage the input tree into workdir so paths are clean
         shutil.copytree(os.path.join(HERE, "test_includes"),
                         os.path.join(workdir, "test_includes"))
-        shutil.copy(os.path.join(ROOT, "main.py"), workdir)
-        shutil.copy(os.path.join(ROOT, "run.sh"), workdir)
 
         try:
             env = os.environ.copy()
             env["STRUCTOPY_ARTIFACT_DIR"] = workdir
             r = subprocess.run(
-                ["bash", "run.sh", "test_includes/main.h"],
+                ["bash", os.path.join(ROOT, "run.sh"), "test_includes/main.h"],
                 cwd=workdir, capture_output=True, text=True,
                 timeout=SUBPROCESS_TIMEOUT, env=env,
             )
@@ -530,8 +530,9 @@ def test_includes():
         report("stubbed list includes vector",
                "vector" in r.stdout, f"stdout: {r.stdout[:300]}")
 
-        # Read the generated module from workdir and exec it
-        with open(os.path.join(workdir, "output.py"), "r") as f:
+        # Default output filename now mirrors the input basename:
+        # `test_includes/main.h` -> `main.py` (in cwd = workdir).
+        with open(os.path.join(workdir, "main.py"), "r") as f:
             generated = f.read()
         m = load_generated(generated, "gen_includes")
 

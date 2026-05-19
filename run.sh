@@ -12,8 +12,11 @@
 
 set -euo pipefail
 
+USAGE="Usage: $0 [-o <output.py>] [--endian little|big] [-I <include_dir>]... <input.h>"
+
 extra_includes=()
 endian=""
+output_file=""
 while [ $# -gt 0 ]; do
 	case "$1" in
 		-I)
@@ -24,6 +27,16 @@ while [ $# -gt 0 ]; do
 			;;
 		-I*)
 			extra_includes+=("$1")
+			shift
+			;;
+		-o)
+			shift
+			[ $# -gt 0 ] || { echo "Error: -o requires a path argument" >&2; exit 1; }
+			output_file="$1"
+			shift
+			;;
+		-o*)
+			output_file="${1#-o}"
 			shift
 			;;
 		--endian)
@@ -37,7 +50,7 @@ while [ $# -gt 0 ]; do
 			shift
 			;;
 		-h|--help)
-			echo "Usage: $0 [--endian little|big] [-I <include_dir>]... <input.h>"
+			echo "$USAGE"
 			exit 0
 			;;
 		--)
@@ -46,7 +59,7 @@ while [ $# -gt 0 ]; do
 			;;
 		-*)
 			echo "Unknown flag: $1" >&2
-			echo "Usage: $0 [--endian little|big] [-I <include_dir>]... <input.h>" >&2
+			echo "$USAGE" >&2
 			exit 1
 			;;
 		*)
@@ -62,7 +75,7 @@ fi
 
 input_file="${1:-}"
 if [ -z "$input_file" ]; then
-	echo "Usage: $0 [-I <include_dir>]... <input.h>" >&2
+	echo "$USAGE" >&2
 	exit 1
 fi
 if [ ! -f "$input_file" ]; then
@@ -70,19 +83,43 @@ if [ ! -f "$input_file" ]; then
 	exit 1
 fi
 
+# Default output: same basename as input with .py extension, in cwd.
+# (e.g. `./run.sh path/to/foo.h` -> `./foo.py`.) -o overrides.
+if [ -z "$output_file" ]; then
+	input_basename=$(basename "$input_file")
+	output_file="${input_basename%.*}.py"
+fi
+
 input_dir=$(dirname "$input_file")
 stub_dir=$(mktemp -d)
 trap 'rm -rf "$stub_dir"' EXIT
 
-# Artifacts go to /tmp/structopy/ so the repo working tree stays clean.
-# Fixed path (not mktemp) so the location is predictable across runs.
-# Override with STRUCTOPY_ARTIFACT_DIR if you need a different location
+# Throwaway artifacts (preprocessed header, smoke-test scaffold) go to
+# /tmp/structopy/ so the repo working tree stays clean. The actual deliverable
+# is $output_file — that's the file the caller actually wants. Override the
+# scratch location with STRUCTOPY_ARTIFACT_DIR if you need it elsewhere
 # (the test harness uses this to keep parallel runs isolated).
 artifact_dir="${STRUCTOPY_ARTIFACT_DIR:-/tmp/structopy}"
 mkdir -p "$artifact_dir"
 
 # Resolve main.py relative to this script so run.sh works from any cwd.
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# Ensure the output directory exists; resolve to an absolute path for the
+# collision check below.
+output_parent=$(dirname "$output_file")
+mkdir -p "$output_parent"
+output_abs="$(cd "$output_parent" && pwd)/$(basename "$output_file")"
+
+# Refuse to write the generated module on top of the generator script.
+# Bash's `> $output_file` truncates before python3 runs, so a collision
+# (e.g. running `./run.sh main.h` from a directory that also contains a copy
+# of the generator named main.py) would silently empty the generator.
+if [ "$output_abs" = "$script_dir/main.py" ]; then
+	echo "Error: output file '$output_file' would overwrite the generator at '$script_dir/main.py'." >&2
+	echo "       Use -o <other_path> to write the generated module somewhere else." >&2
+	exit 1
+fi
 
 # 1. Discover the full transitive include tree.
 #    -nostdinc removes default system paths, -MG makes missing headers non-fatal.
@@ -142,13 +179,16 @@ gcc -E -P -nostdinc -I"$input_dir" "${extra_includes[@]}" -I"$stub_dir" "$input_
 
 echo "Preprocessed output written to $artifact_dir/temp.hpp"
 
-python3 "$script_dir/main.py" ${endian:+--endian "$endian"} "$artifact_dir/temp.hpp" > "$artifact_dir/output.py"
-echo "###### saved resulting python file into $artifact_dir/output.py"
+python3 "$script_dir/main.py" ${endian:+--endian "$endian"} "$artifact_dir/temp.hpp" > "$output_file"
+echo "###### saved resulting python file into $output_file"
 
-# Smoke-test scaffold: instantiate every generated class.
-cl=$(grep '^class ' "$artifact_dir/output.py" | tr ':' ' ' | awk '{print $2}')
+# Smoke-test scaffold: instantiate every generated class. Lives in /tmp; the
+# scaffold imports output.py from the directory it's written next to.
+output_dir=$(cd "$(dirname "$output_file")" && pwd)
+output_module=$(basename "$output_file" .py)
+cl=$(grep '^class ' "$output_file" | tr ':' ' ' | awk '{print $2}')
 echo "$cl"
-echo "from output import *" > "$artifact_dir/test.py"
+echo "from $output_module import *" > "$artifact_dir/test.py"
 for name in $cl; do
 	echo "found built class for $name"
 	cat >> "$artifact_dir/test.py" <<EOF
@@ -159,4 +199,4 @@ print(test_object.get_size())
 print(test_object.__dict__)
 EOF
 done
-(cd "$artifact_dir" && python3 test.py)
+(cd "$artifact_dir" && PYTHONPATH="$output_dir:${PYTHONPATH:-}" python3 test.py)
